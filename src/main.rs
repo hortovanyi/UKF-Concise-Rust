@@ -1,33 +1,25 @@
-mod filter;
+mod ukf;
 mod sensor;
-mod ukf_type;
-mod util;
 
-extern crate clap;
+use std::io::{BufRead, BufReader};
 
-#[macro_use]
-extern crate slog;
-extern crate slog_async;
-extern crate slog_term;
-#[macro_use]
-extern crate slog_scope;
-
-extern crate csv;
-#[macro_use]
-extern crate serde_derive;
-
-use slog::Drain;
-use std::io::{BufReader, BufRead};
 use std::{process, usize};
 
 use std::fs::File;
 use std::path::Path;
 use std::vec::Vec;
 
-pub use filter::kalman_filter::*;
 pub use sensor::measurement::*;
 
-use clap::Parser;
+use clap::{Parser, command};
+
+#[macro_use]
+extern crate serde_derive;
+
+use tracing::{debug, error, info, trace, warn, Level};
+use tracing_subscriber;
+
+use crate::ukf::UnscentedKalmanFilter;
 
 #[derive(Serialize)]
 struct Output {
@@ -68,11 +60,17 @@ fn run_ukf(input_file: &File, output_file: &File) -> Result<(), String> {
         ground_truths.push(gtp);
     });
 
+    trace!("creating lidar sensor");
+    let lidar_sensor = LidarSensor::new();
+
+    trace!("creating radar sensor");
+    let radar_sensor = RadarSensor::new();
+
     trace!("creating ukf object");
-    let mut ukf: UnscentedKalmanFilter = UKF::new();
+    let mut ukf: UnscentedKalmanFilter = UnscentedKalmanFilter::new(Some(lidar_sensor), Some(radar_sensor));
     info!("processing measurement data ....");
     for (i, m) in measurements.iter().enumerate() {
-        let x = ukf.process_measurement(m);
+        let (x,P) = ukf.process_measurement(m);
         // trace!("{} x:{:?} ", i, x);
         let xest = EstimationPackage::from_state(&x);
         estimations.push(xest);
@@ -102,8 +100,8 @@ fn run_ukf(input_file: &File, output_file: &File) -> Result<(), String> {
     }
 
     info!(
-        "Accruacry - RMSE: {:?}",
-        util::helper::calculate_rmse(&estimations, &ground_truths)
+        "Accruacy - RMSE: {:?}",
+        ukf::util::calculate_rmse(&estimations, &ground_truths)
     );
     wtr.flush().unwrap();
 
@@ -112,28 +110,20 @@ fn run_ukf(input_file: &File, output_file: &File) -> Result<(), String> {
 }
 
 fn run(args: Arguments) -> Result<(), String> {
-    let min_log_level = match args.verbose {
-        0 => slog::Level::Info,
-        1 => slog::Level::Debug,
-        2 | _ => slog::Level::Trace,
+    let min_log_level = match args.verbose.unwrap_or_default(){
+        0 => Level::INFO,
+        1 => Level::DEBUG,
+        2 | _ => Level::TRACE,
     };
-    // let decorator = slog_term::PlainDecorator::new(std::io::stdout());
-    let decorator = slog_term::TermDecorator::new().build();
-    let out_drain = slog_term::CompactFormat::new(decorator).build().fuse();
-    let out_drain = slog::LevelFilter(out_drain, min_log_level).fuse();
 
-    // let decorator = slog_term::PlainDecorator::new(std::io::stderr());
-    // let err_drain = slog_term::CompactFormat::new(decorator).build().fuse();
+    // install global collector configured based on RUST_LOG env var.
+    tracing_subscriber::fmt()
+        .with_max_level(min_log_level)
+        .init();
 
-    // let drain_pair = slog::Duplicate::new(out_drain, err_drain).fuse();
+    debug!("tracing::Level::{}", min_log_level.as_str());
 
-    let drain = slog_async::Async::new(out_drain).build().fuse();
-
-    let logger = slog::Logger::root(drain, o!("version" => env!("CARGO_PKG_VERSION")));
-    let _logger_guard = slog_scope::set_global_logger(logger);
-
-    debug!("slog::Level::{}", min_log_level.as_str());
-    trace!("app_setup");
+    info!("app_setup");
     let input_file_name = args.input;
     let input_path = Path::new(&input_file_name);
     if !input_path.is_file() {
@@ -165,29 +155,23 @@ fn run(args: Arguments) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_file_name(name: &str) -> Result<(), String> {
-    if name.trim().len() != name.len() {
-        Err(String::from(
-            "file name cannot have leading and trailing space",
-        ))
-    } else {
-        Ok(())
-    }
-}
-
-#[derive(Parser,Default,Debug,Clone)]
-#[clap(author="Nick Hortovanyi",version="0.2.0",about="Unscented Kalman Filter in Rust based on C++ version")]
+#[derive(Parser, Default, Debug, Clone)]
+#[clap(
+    author = "Nick Hortovanyi",
+    version = "0.2.0",
+    about = "Concise UKF in Rust based on C++ version"
+)]
+#[command(author, version, about, long_about= None)]
 struct Arguments {
-    #[clap(short, long, forbid_empty_values = true, validator = validate_file_name)]
+    #[clap(short, long)]
     input: String,
-    #[clap(short, long, forbid_empty_values = true, validator = validate_file_name)]
+    #[clap(short, long)]
     output: String,
-    #[clap(short, long, default_value_t = 0, parse(from_occurrences))]
-    verbose: usize
+    #[clap(short, long, action = clap::ArgAction::Count)]
+    verbose: Option<u8>,
 }
 
 fn main() {
-
     let args = Arguments::parse();
     if let Err(err) = run(args) {
         println!("Application error: {}", err);

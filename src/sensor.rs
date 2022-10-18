@@ -5,8 +5,7 @@ pub mod measurement {
 
     use na::{Vector2, Vector3, Vector4};
 
-    use crate::ukf_type;
-    use ukf_type::ukf::*;
+    use crate::{ukf::{STD_LASPX, STD_LASPY, STD_RADR, STD_RADPHI, LidarStateVector, LidarCovarMatrix, N_Z_LIDAR, LidarNoiseCovarMatrix, N_Z_RADAR, RadarNoiseCovarMatrix, StateVector, RadarStateVector, RadarCovarMatrix}};
 
     pub trait SensorMeasurement<T> {}
 
@@ -17,7 +16,7 @@ pub mod measurement {
         fn noise_covar_matrix(&self) -> U;
     }
 
-    #[derive(Debug)]
+    #[derive(Debug,Clone)]
     pub struct LidarMeasurement {
         pub px: f64,
         pub py: f64,
@@ -54,8 +53,8 @@ pub mod measurement {
         fn new() -> LidarSensor {
             LidarSensor {
                 n_z: N_Z_LIDAR,
-                std_laspx: 0.15,
-                std_laspy: 0.15,
+                std_laspx: STD_LASPX,
+                std_laspy: STD_LASPY,
             }
         }
     }
@@ -71,7 +70,7 @@ pub mod measurement {
         }
     }
 
-    #[derive(Debug)]
+    #[derive(Debug,Clone)]
     pub struct RadarMeasurement {
         pub rho: f64,
         pub theta: f64,
@@ -109,9 +108,9 @@ pub mod measurement {
         fn new() -> RadarSensor {
             RadarSensor {
                 n_z: N_Z_RADAR,
-                std_radr: 0.3,
-                std_radphi: 0.03,
-                std_radrd: 0.3,
+                std_radr: STD_RADR,
+                std_radphi: STD_RADPHI,
+                std_radrd: STD_RADR,
             }
         }
     }
