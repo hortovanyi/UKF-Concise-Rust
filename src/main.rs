@@ -70,6 +70,8 @@ fn run_ukf(input_file: &File, output_file: &File) -> Result<(), String> {
     let mut ukf: UnscentedKalmanFilter = UnscentedKalmanFilter::new(Some(lidar_sensor), Some(radar_sensor));
     info!("processing measurement data ....");
     for (i, m) in measurements.iter().enumerate() {
+        debug!("measurement i: {}", i);
+
         let (x,P) = ukf.process_measurement(m);
         // trace!("{} x:{:?} ", i, x);
         let xest = EstimationPackage::from_state(&x);
@@ -97,6 +99,8 @@ fn run_ukf(input_file: &File, output_file: &File) -> Result<(), String> {
             nis_radar: ukf.nis_radar,
         };
         wtr.serialize(output).unwrap();
+
+        // if i > 10 {break};
     }
 
     info!(

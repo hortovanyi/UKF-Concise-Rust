@@ -102,7 +102,6 @@ pub struct UnscentedKalmanFilter {
     // StateVector
     x: StateVector,
 
-
     // Process noise standard deviation longitudinal acceleration in m/s^2
     std_a: f64,
 
@@ -214,25 +213,35 @@ impl UnscentedKalmanFilter {
 
             // prediction step
             let (X_sig_pred, x, P) = self.prediction(delta_t);
+            debug!("X_sig_pred: {:?}", X_sig_pred);
 
             // update step
             let (x, P, nis) = match m.sensor_type {
                 SensorType::Lidar => match &self.lidar_sensor {
-                    Some(_) => self.lidar_update(m.lidar_data.clone(), X_sig_pred, x, P),
+                    Some(_) => {
+                        debug!("lidar_data: {:?}", m.lidar_data.clone());
+                        self.lidar_update(m.lidar_data.clone(), X_sig_pred, x, P)
+                    }
                     None => {
                         debug!("not using lidar_sensor");
                         (self.x, self.P, 0.0)
                     }
                 },
                 SensorType::Radar => match &self.radar_sensor {
-                    Some(_) => self.radar_update(m.radar_data.clone(), X_sig_pred, x, P),
+                    Some(_) => {
+                        debug!("radar_data: {:?}", m.radar_data.clone());
+                        self.radar_update(m.radar_data.clone(), X_sig_pred, x, P)
+                    }
                     None => {
                         debug!("not using radar_sensor");
                         (self.x, self.P, 0.0)
                     }
                 },
             };
+            self.x = x;
+            self.P = P;
 
+            debug!("X_sig_pred: {:?}", X_sig_pred);
             (x, P)
         }
     }
@@ -413,7 +422,6 @@ impl UnscentedKalmanFilter {
         x: StateVector,
         p: CovarMatrix,
     ) -> (StateVector, CovarMatrix, f64) {
-
         let z = match m.clone() {
             Some(m) => LidarStateVector::new(m.px, m.py),
             None => LidarStateVector::zeros(),
@@ -475,7 +483,7 @@ impl UnscentedKalmanFilter {
         }
 
         // Kalma gain K
-        let K:LidarKalmanGain = Tc
+        let K: LidarKalmanGain = Tc
             * match S.try_inverse() {
                 Some(s_inverse) => s_inverse,
                 None => S,
@@ -504,7 +512,6 @@ impl UnscentedKalmanFilter {
         x: StateVector,
         p: CovarMatrix,
     ) -> (StateVector, CovarMatrix, f64) {
-
         let z = match m.clone() {
             Some(m) => RadarStateVector::new(m.rho, m.theta, m.rho_dot),
             None => RadarStateVector::zeros(),
@@ -574,7 +581,7 @@ impl UnscentedKalmanFilter {
         }
 
         // Kalma gain K
-        let K:RadarKalmanGain = Tc
+        let K: RadarKalmanGain = Tc
             * match S.try_inverse() {
                 Some(s_inverse) => s_inverse,
                 None => S,
